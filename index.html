@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kilo Oyunu</title>
+  <style>
+    body {
+      margin: 0;
+      background: #dcd9d5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: Arial, sans-serif;
+    }
+
+    canvas {
+      border: 2px solid #aaa;
+      background: #dcd9d5;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="900" height="300"></canvas>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const GAME_WIDTH = canvas.width;
+    const GAME_HEIGHT = canvas.height;
+    const GROUND_Y = 240;
+    const BG = "#dcd9d5";
+
+    // Karakteri ekranda aşağı bastırmak için
+    const PLAYER_DRAW_Y_OFFSET = 40;
+
+    const sprite = new Image();
+    const winBg = new Image();
+    winBg.src = "bas.png";
+    let transparentSprite = null;
+    let loopStarted = false;
+
+    let kilo;
+    let started;
+    let won;
+    let frame;
+    let gameSpeed;
+    let kiloTick;
+    let obstacles;
+    let clouds;
+    let sadUntil;
+    let fireworks;
+    let fireworkTick;
+
+    const player = {
+      x: 90,
+      y: 0,
+      width: 110,
+      height: 150,
+      velocityY: 0,
+      gravity: 0.9,
+      jumpPower: -18,
+      isJumping: false,
+    };
+
+    function getGroundPlayerY() {
+      return GROUND_Y - player.height;
+    }
+
+    function startGameLoop() {
+      if (loopStarted) return;
+      loopStarted = true;
+      resetGame();
+      loop();
+    }
+
+    function buildTransparentSprite() {
+      if (!sprite.complete || sprite.naturalWidth === 0) return;
+
+      try {
+        const offscreen = document.createElement("canvas");
+        offscreen.width = sprite.naturalWidth;
+        offscreen.height = sprite.naturalHeight;
+        const offCtx = offscreen.getContext("2d");
+        offCtx.drawImage(sprite, 0, 0);
+
+        const imgData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
+        const data = imgData.data;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+
+          const closeToBg =
+            Math.abs(r - 220) <= 24 &&
+            Math.abs(g - 217) <= 24 &&
+            Math.abs(b - 213) <= 24;
+
+          if (closeToBg) {
+            data[i + 3] = 0;
+          }
+        }
+
+        offCtx.putImageData(imgData, 0, 0);
+        transparentSprite = offscreen;
+      } catch (err) {
+        transparentSprite = null;
+      }
+    }
+
+    function resetGame() {
+      kilo = 81.5;
+      started = false;
+      won = false;
+      frame = 0;
+      gameSpeed = 7;
+      kiloTick = 0;
+      obstacles = [];
+      clouds = [
+        { x: 650, y: 70, w: 110 },
+        { x: 820, y: 130, w: 80 }
+      ];
+      sadUntil = 0;
+      fireworks = [];
+      fireworkTick = 0;
+
+      player.y = getGroundPlayerY();
+      player.velocityY = 0;
+      player.isJumping = false;
+    }
+
+    function jump() {
+      if (!player.isJumping && !won) {
+        player.velocityY = player.jumpPower;
+        player.isJumping = true;
+        started = true;
+      }
+    }
+
+    function spawnFirework() {
+      const cx = 80 + Math.random() * (GAME_WIDTH - 160);
+      const cy = 45 + Math.random() * 120;
+      const count = 26 + Math.floor(Math.random() * 14);
+      const hue = Math.floor(Math.random() * 360);
+
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count;
+        const speed = 1.8 + Math.random() * 2.6;
+        fireworks.push({
+          x: cx,
+          y: cy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 52 + Math.random() * 18,
+          color: `hsl(${(hue + i * 5) % 360} 92% 60%)`,
+        });
+      }
+    }
+
+    function updateFireworks() {
+      if (!won) return;
+      fireworkTick++;
+
+      if (fireworkTick % 16 === 0) {
+        spawnFirework();
+      }
+
+      for (let i = fireworks.length - 1; i >= 0; i--) {
+        const p = fireworks[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.03;
+        p.vx *= 0.992;
+        p.life -= 1;
+
+        if (p.life <= 0) {
+          fireworks.splice(i, 1);
+        }
+      }
+    }
+
+    function spawnObstacle() {
+      const types = ["🍕", "🍔", "🍟", "🥤"];
+      const size = 56 + Math.random() * 14;
+
+      obstacles.push({
+        x: GAME_WIDTH + 20,
+        y: GROUND_Y - size + 4,
+        width: size,
+        height: size,
+        emoji: types[Math.floor(Math.random() * types.length)]
+      });
+    }
+
+    function updatePlayer() {
+      player.velocityY += player.gravity;
+      player.y += player.velocityY;
+
+      const groundPlayerY = getGroundPlayerY();
+
+      if (player.y >= groundPlayerY) {
+        player.y = groundPlayerY;
+        player.velocityY = 0;
+        player.isJumping = false;
+      }
+    }
+
+    function updateObstacles() {
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        o.x -= gameSpeed;
+
+        const hitbox = {
+          x: player.x + 20,
+          y: player.y + 18 + PLAYER_DRAW_Y_OFFSET,
+          width: player.width - 45,
+          height: player.height - 35
+        };
+
+        if (
+          hitbox.x < o.x + o.width &&
+          hitbox.x + hitbox.width > o.x &&
+          hitbox.y < o.y + o.height &&
+          hitbox.y + hitbox.height > o.y
+        ) {
+          kilo += 2;
+          sadUntil = frame + 90;
+          obstacles.splice(i, 1);
+          continue;
+        }
+
+        if (o.x + o.width < 0) {
+          obstacles.splice(i, 1);
+        }
+      }
+    }
+
+    function updateClouds() {
+      clouds.forEach(cloud => {
+        cloud.x -= gameSpeed * 0.25;
+
+        if (cloud.x + cloud.w < 0) {
+          cloud.x = GAME_WIDTH + Math.random() * 150;
+          cloud.y = 50 + Math.random() * 100;
+        }
+      });
+    }
+
+    function updateWeight() {
+      if (!started || won) return;
+
+      kiloTick++;
+
+      if (kiloTick % 18 === 0) {
+        kilo -= 0.1;
+      }
+
+      if (kilo <= 55) {
+        kilo = 55;
+        won = true;
+      }
+    }
+
+    function updateDifficulty() {
+      if (started && frame % 300 === 0) {
+        gameSpeed += 0.35;
+      }
+    }
+
+    function maybeSpawnObstacle() {
+      if (!started || won) return;
+
+      const spawnRate = Math.max(70, 120 - Math.floor(frame / 180));
+      if (frame % spawnRate === 0) {
+        spawnObstacle();
+      }
+    }
+
+    function drawGround() {
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y);
+      ctx.lineTo(GAME_WIDTH, GROUND_Y);
+      ctx.strokeStyle = "#4d4d4d";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      for (let i = -((frame * gameSpeed) % 50); i < GAME_WIDTH; i += 50) {
+        ctx.beginPath();
+        ctx.moveTo(i, GROUND_Y + 10);
+        ctx.lineTo(i + 28, GROUND_Y + 10);
+        ctx.strokeStyle = "#9b968f";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
+    function drawCloud(x, y, w) {
+      ctx.strokeStyle = "#c4c0bb";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 14);
+      ctx.lineTo(x + 18, y + 14);
+      ctx.quadraticCurveTo(x + 26, y + 2, x + 40, y + 8);
+      ctx.quadraticCurveTo(x + 48, y - 8, x + 64, y + 2);
+      ctx.quadraticCurveTo(x + 80, y - 2, x + w, y + 14);
+      ctx.lineTo(x + w, y + 14);
+      ctx.stroke();
+    }
+
+    function drawClouds() {
+      clouds.forEach(c => drawCloud(c.x, c.y, c.w));
+    }
+
+    function drawPlayer() {
+      const isRunning = started && !won && !player.isJumping;
+      const runBobY = isRunning ? Math.sin(frame * 0.4) * 1 : 0;
+      const drawX = player.x;
+      const drawY = player.y + runBobY + PLAYER_DRAW_Y_OFFSET;
+
+      if (transparentSprite) {
+        ctx.drawImage(transparentSprite, drawX, drawY, player.width, player.height);
+      } else if (sprite.complete && sprite.naturalWidth > 0) {
+        ctx.drawImage(sprite, drawX, drawY, player.width, player.height);
+      } else {
+        ctx.fillStyle = "#222";
+        ctx.fillRect(drawX, drawY, player.width, player.height);
+      }
+
+      if (frame < sadUntil) {
+        const faceX = drawX + 61;
+        const faceY = drawY + 36;
+
+        ctx.strokeStyle = "#2f2f2f";
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = "round";
+
+        ctx.beginPath();
+        ctx.moveTo(faceX - 12, faceY - 4);
+        ctx.lineTo(faceX - 4, faceY - 8);
+        ctx.moveTo(faceX + 4, faceY - 8);
+        ctx.lineTo(faceX + 12, faceY - 4);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(faceX, faceY + 10, 8, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+      }
+    }
+
+    function drawObstacles() {
+      obstacles.forEach(o => {
+        ctx.font = `${Math.floor(o.height)}px Arial`;
+        ctx.fillText(o.emoji, o.x, o.y + o.height - 3);
+      });
+    }
+
+    function drawUI() {
+      ctx.fillStyle = "#333";
+      ctx.font = "bold 20px Arial";
+      ctx.fillText(`Kilo: ${kilo.toFixed(1)} kg`, 30, 35);
+      ctx.fillText("Hedef: 55 kg", 30, 68);
+
+      if (!started) {
+        ctx.font = "18px Arial";
+        ctx.fillText("Başlamak için SPACE / ↑ / tıkla", 320, 45);
+      }
+
+      if (won) {
+        ctx.fillStyle = "#2d7a35";
+        ctx.font = "bold 38px Arial";
+        ctx.fillText("İşi başardın!", 370, 105);
+        ctx.font = "18px Arial";
+        ctx.fillText("R tuşuna basıp tekrar oynayabilirsin", 340, 135);
+      }
+    }
+
+    function update() {
+      updatePlayer();
+      updateObstacles();
+      updateClouds();
+      updateWeight();
+      updateDifficulty();
+      maybeSpawnObstacle();
+      updateFireworks();
+      frame++;
+    }
+
+    function draw() {
+      if (won) {
+        if (winBg.complete && winBg.naturalWidth > 0) {
+          const squareSize = GAME_HEIGHT;
+          const squareX = (GAME_WIDTH - squareSize) / 2;
+          const squareY = 0;
+          ctx.fillStyle = "#10142e";
+          ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+          ctx.drawImage(winBg, squareX, squareY, squareSize, squareSize);
+        } else {
+          ctx.fillStyle = "#15183a";
+          ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        }
+
+        for (let i = 0; i < fireworks.length; i++) {
+          const p = fireworks[i];
+          ctx.globalAlpha = Math.max(0, p.life / 70);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.fillStyle = "rgba(0,0,0,0.32)";
+        ctx.fillRect(0, 0, GAME_WIDTH, 56);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 34px Arial";
+        ctx.fillText("İşi başardın!", 315, 38);
+        ctx.font = "18px Arial";
+        ctx.fillText("R ile tekrar başlat", 360, 58);
+        return;
+      }
+
+      ctx.fillStyle = BG;
+      ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      drawClouds();
+      drawGround();
+      drawPlayer();
+      drawObstacles();
+      drawUI();
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.code === "Space" || e.code === "ArrowUp") {
+        e.preventDefault();
+        jump();
+      }
+
+      if (e.key === "r" || e.key === "R") {
+        resetGame();
+      }
+    });
+
+    document.addEventListener("click", () => jump());
+
+    sprite.onload = () => {
+      buildTransparentSprite();
+      startGameLoop();
+    };
+
+    sprite.onerror = () => {
+      startGameLoop();
+    };
+
+    sprite.src = "character.png";
+
+    if (sprite.complete && sprite.naturalWidth > 0) {
+      buildTransparentSprite();
+      startGameLoop();
+    }
+
+    setTimeout(() => startGameLoop(), 0);
+  </script>
+</body>
+</html>
