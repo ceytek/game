@@ -37,7 +37,9 @@
     const PLAYER_DRAW_Y_OFFSET = 40;
 
     const sprite = new Image();
+    const groomSprite = new Image();
     const winBg = new Image();
+    groomSprite.src = "damat.png";
     winBg.src = "bas.png";
     let transparentSprite = null;
     let loopStarted = false;
@@ -112,7 +114,7 @@
     }
 
     function resetGame() {
-      kilo = 81.5;
+      kilo = 81.4;
       started = false;
       won = false;
       frame = 0;
@@ -357,6 +359,19 @@
       });
     }
 
+    function drawGroomAtRoadEnd() {
+      if (won) return;
+      if (!(kilo <= 56 && kilo > 55)) return;
+      if (!groomSprite.complete || groomSprite.naturalWidth <= 0) return;
+
+      const groomHeight = 165;
+      const groomWidth = groomHeight * (groomSprite.naturalWidth / groomSprite.naturalHeight);
+      const x = GAME_WIDTH - groomWidth - 26;
+      const y = GROUND_Y - groomHeight + 2;
+
+      ctx.drawImage(groomSprite, x, y, groomWidth, groomHeight);
+    }
+
     function drawUI() {
       ctx.fillStyle = "#333";
       ctx.font = "bold 20px Arial";
@@ -426,6 +441,7 @@
       ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
       drawClouds();
       drawGround();
+      drawGroomAtRoadEnd();
       drawPlayer();
       drawObstacles();
       drawUI();
