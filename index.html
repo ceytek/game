@@ -39,8 +39,10 @@
     const sprite = new Image();
     const groomSprite = new Image();
     const winBg = new Image();
+    const failBg = new Image();
     groomSprite.src = "damat.png";
     winBg.src = "bas.png";
+    failBg.src = "taylant.png";
     let transparentSprite = null;
     let loopStarted = false;
 
@@ -57,6 +59,10 @@
     let fireworkTick;
     let audioCtx;
     let winSoundPlayed;
+    let failed;
+    let simDate;
+    let targetDate;
+    let dateIntervalId;
 
     const player = {
       x: 90,
@@ -119,6 +125,7 @@
       kilo = 80.8;
       started = false;
       won = false;
+      failed = false;
       frame = 0;
       gameSpeed = 7;
       kiloTick = 0;
@@ -135,10 +142,12 @@
       player.y = getGroundPlayerY();
       player.velocityY = 0;
       player.isJumping = false;
+
+      initDateSimulation();
     }
 
     function jump() {
-      if (!player.isJumping && !won) {
+      if (!player.isJumping && !won && !failed) {
         player.velocityY = player.jumpPower;
         player.isJumping = true;
         started = true;
@@ -190,6 +199,31 @@
       playTone(659, 0.12, "triangle", 0.05, 0.12);
       playTone(784, 0.16, "triangle", 0.06, 0.24);
       playTone(1046, 0.24, "triangle", 0.07, 0.40);
+    }
+
+    function formatDateTR(d) {
+      if (!d) return "-";
+      return d.toLocaleDateString("tr-TR", { day: "numeric", month: "long", year: "numeric" });
+    }
+
+    function initDateSimulation() {
+      if (dateIntervalId) {
+        clearInterval(dateIntervalId);
+        dateIntervalId = null;
+      }
+
+      const now = new Date();
+      simDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      targetDate = new Date(now.getFullYear(), 8, 1); // 1 Eylul
+      if (simDate > targetDate) targetDate = new Date(now.getFullYear() + 1, 8, 1);
+
+      dateIntervalId = setInterval(() => {
+        if (won || failed) return;
+        simDate.setDate(simDate.getDate() + 1);
+        if (simDate >= targetDate && kilo > 55) {
+          failed = true;
+        }
+      }, 3000);
     }
 
     function spawnFirework() {
@@ -303,7 +337,7 @@
     }
 
     function updateWeight() {
-      if (!started || won) return;
+      if (!started || won || failed) return;
 
       kiloTick++;
 
@@ -328,7 +362,7 @@
     }
 
     function maybeSpawnObstacle() {
-      if (!started || won) return;
+      if (!started || won || failed) return;
 
       const spawnRate = Math.max(70, 120 - Math.floor(frame / 180));
       if (frame % spawnRate === 0) {
@@ -432,6 +466,13 @@
       ctx.font = "bold 20px Arial";
       ctx.fillText(`Kilo: ${kilo.toFixed(1)} kg`, 30, 35);
       ctx.fillText("Hedef: 55 kg", 30, 68);
+      ctx.font = "bold 18px Arial";
+      const dateText = `Tarih: ${formatDateTR(simDate)}`;
+      const deadlineText = `Son Gun: ${formatDateTR(targetDate)}`;
+      const dateWidth = ctx.measureText(dateText).width;
+      const deadlineWidth = ctx.measureText(deadlineText).width;
+      ctx.fillText(dateText, GAME_WIDTH - dateWidth - 30, 35);
+      ctx.fillText(deadlineText, GAME_WIDTH - deadlineWidth - 30, 64);
 
       if (!started) {
         ctx.font = "18px Arial";
@@ -489,6 +530,24 @@
         ctx.fillText("İşi başardın!", 315, 38);
         ctx.font = "18px Arial";
         ctx.fillText("R ile tekrar başlat", 360, 58);
+        return;
+      }
+
+      if (failed) {
+        if (failBg.complete && failBg.naturalWidth > 0) {
+          ctx.drawImage(failBg, 0, 0, GAME_WIDTH, GAME_HEIGHT);
+        } else {
+          ctx.fillStyle = "#2a0e0e";
+          ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        }
+
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.fillRect(0, 0, GAME_WIDTH, 64);
+        ctx.fillStyle = "#ffdada";
+        ctx.font = "bold 46px Arial";
+        ctx.fillText("Basaramadiniz", 280, 48);
+        ctx.font = "20px Arial";
+        ctx.fillText("R ile tekrar baslat", 350, 78);
         return;
       }
 
