@@ -37,6 +37,12 @@
     const PLAYER_DRAW_Y_OFFSET = 40;
 
     const sprite = new Image();
+    const runFrames = [new Image(), new Image(), new Image(), new Image(), new Image()];
+    runFrames[0].src = "res1.png";
+    runFrames[1].src = "res2.png";
+    runFrames[2].src = "res3.png";
+    runFrames[3].src = "res4.png";
+    runFrames[4].src = "res5.png";
     const groomSprite = new Image();
     const winBg = new Image();
     const failBg = new Image();
@@ -44,6 +50,7 @@
     winBg.src = "bas.png";
     failBg.src = "taylant.png";
     let transparentSprite = null;
+    let transparentRunFrames = [];
     let loopStarted = false;
 
     let kilo;
@@ -63,6 +70,8 @@
     let simDate;
     let targetDate;
     let dateIntervalId;
+    const RUN_FRAME_COUNT = 5;
+    const RUN_ANIM_SPEED = 6;
 
     const player = {
       x: 90,
@@ -86,38 +95,41 @@
       loop();
     }
 
-    function buildTransparentSprite() {
-      if (!sprite.complete || sprite.naturalWidth === 0) return;
-
+    function removeBg(img) {
       try {
-        const offscreen = document.createElement("canvas");
-        offscreen.width = sprite.naturalWidth;
-        offscreen.height = sprite.naturalHeight;
-        const offCtx = offscreen.getContext("2d");
-        offCtx.drawImage(sprite, 0, 0);
-
-        const imgData = offCtx.getImageData(0, 0, offscreen.width, offscreen.height);
-        const data = imgData.data;
-
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-
-          const closeToBg =
-            Math.abs(r - 220) <= 24 &&
-            Math.abs(g - 217) <= 24 &&
-            Math.abs(b - 213) <= 24;
-
-          if (closeToBg) {
-            data[i + 3] = 0;
-          }
+        const c = document.createElement("canvas");
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const cx = c.getContext("2d");
+        cx.drawImage(img, 0, 0);
+        const imgData = cx.getImageData(0, 0, c.width, c.height);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] === 0) continue;
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          const isWhite = r >= 235 && g >= 235 && b >= 235;
+          const isOldGrey = Math.abs(r - 220) <= 24 && Math.abs(g - 217) <= 24 && Math.abs(b - 213) <= 24;
+          if (isWhite || isOldGrey) d[i + 3] = 0;
         }
+        cx.putImageData(imgData, 0, 0);
+        return c;
+      } catch (e) {
+        return null;
+      }
+    }
 
-        offCtx.putImageData(imgData, 0, 0);
-        transparentSprite = offscreen;
-      } catch (err) {
-        transparentSprite = null;
+    function buildTransparentSprite() {
+      if (sprite.complete && sprite.naturalWidth > 0) {
+        transparentSprite = removeBg(sprite);
+      }
+      transparentRunFrames = [];
+      for (let i = 0; i < runFrames.length; i++) {
+        const f = runFrames[i];
+        if (f.complete && f.naturalWidth > 0) {
+          transparentRunFrames.push(removeBg(f) || f);
+        } else {
+          transparentRunFrames.push(f);
+        }
       }
     }
 
@@ -407,11 +419,15 @@
 
     function drawPlayer() {
       const isRunning = started && !won && !player.isJumping;
-      const runBobY = isRunning ? Math.sin(frame * 0.4) * 1 : 0;
+      const runBobY = 0;
       const drawX = player.x;
       const drawY = player.y + runBobY + PLAYER_DRAW_Y_OFFSET;
 
-      if (transparentSprite) {
+      if (isRunning && transparentRunFrames.length === RUN_FRAME_COUNT) {
+        const fi = Math.floor(frame / RUN_ANIM_SPEED) % RUN_FRAME_COUNT;
+        const src = transparentRunFrames[fi];
+        ctx.drawImage(src, drawX, drawY, player.width, player.height);
+      } else if (transparentSprite) {
         ctx.drawImage(transparentSprite, drawX, drawY, player.width, player.height);
       } else if (sprite.complete && sprite.naturalWidth > 0) {
         ctx.drawImage(sprite, drawX, drawY, player.width, player.height);
@@ -580,14 +596,20 @@
 
     document.addEventListener("click", () => jump());
 
-    sprite.onload = () => {
-      buildTransparentSprite();
-      startGameLoop();
-    };
+    let loadedCount = 0;
+    const totalToLoad = 1 + 5;
 
-    sprite.onerror = () => {
-      startGameLoop();
-    };
+    function onAssetLoad() {
+      loadedCount++;
+      if (loadedCount >= totalToLoad) {
+        buildTransparentSprite();
+        startGameLoop();
+      }
+    }
+
+    sprite.onload = onAssetLoad;
+    sprite.onerror = onAssetLoad;
+    runFrames.forEach(f => { f.onload = onAssetLoad; f.onerror = onAssetLoad; });
 
     sprite.src = "character.png";
 
